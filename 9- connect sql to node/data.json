@@ -1,0 +1,40 @@
+{
+  "users": [
+    {
+      "name": "hamada",
+      "age": 19,
+      "email": "test@eyad.com",
+      "id": "8935288",
+      "hobbies": [
+        "gaming",
+        "reading"
+      ]
+    },
+    {
+      "name": "eyad",
+      "age": 19,
+      "email": "test@eyad.com",
+      "id": "3777478"
+    },
+    {
+      "name": "eyad",
+      "age": 20,
+      "email": "test@eyad.com",
+      "hobbies": [
+        "gaming"
+      ],
+      "id": "9442870"
+    },
+    {
+      "name": "3beed",
+      "age": 25,
+      "email": "test@3beed.com",
+      "hobbies": [
+        "cooking"
+      ],
+      "id": "7729142"
+    }
+  ],
+  "books": [],
+  "orders": []
+}

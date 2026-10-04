@@ -391,10 +391,6 @@ Any other path should serve `pages/404.html` with status 404.
 - Return 403 `{ error: "forbidden" }` if not
 - For API routes (returns JSON)
 
-### `checkPageRole(...roles)`
-- Same as checkRole but redirects to `/login.html` instead of returning JSON
-- For page routes
-
 ### `validateBody(schema)`
 - Take a Zod schema
 - Call `schema.safeParse(req.body)`

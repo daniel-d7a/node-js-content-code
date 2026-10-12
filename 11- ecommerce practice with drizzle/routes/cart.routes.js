@@ -1,6 +1,5 @@
+import { and, eq, sql } from "drizzle-orm";
 import express from "express";
-
-import { eq } from "drizzle-orm";
 import z from "zod";
 import { db } from "../db/index.js";
 import { cartProduct, carts, products } from "../db/schema.js";
@@ -9,100 +8,167 @@ import { productWithQuantity } from "../validation-schemas/products.js";
 
 export const cartRouter = express.Router();
 
-cartRouter.get("/", async (req, res) => {
-  const data = await db
+async function getUserCart(userId) {
+  const rows = await db
     .select({
       cartId: carts.id,
-      userId: carts.user_id,
-      id: products.id,
+      productId: products.id,
       name: products.name,
+      description: products.description,
       price: products.price,
       image: products.image,
-      description: products.description,
       quantity: cartProduct.quantity,
     })
     .from(carts)
     .innerJoin(cartProduct, eq(carts.id, cartProduct.cartId))
     .innerJoin(products, eq(cartProduct.productId, products.id))
-    .where(eq(carts.user_id, req.user.id));
+    .where(eq(carts.user_id, userId));
 
-  const finalData = {
-    id: data[0].cartId,
-    userId: data[0].userId,
-    products: data.map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: p.price,
-      image: p.image,
-      description: p.description,
-      quantity: p.quantity,
+  if (rows.length === 0) {
+    return { id: null, userId: userId, products: [] };
+  }
+
+  return {
+    id: rows[0].cartId,
+    userId: userId,
+    products: rows.map((row) => ({
+      id: row.productId,
+      name: row.name,
+      description: row.description,
+      price: row.price,
+      image: row.image,
+      quantity: row.quantity,
     })),
   };
+}
+
+cartRouter.get("/", async (req, res) => {
+  const cart = await getUserCart(req.user.id);
 
   return res.status(200).json({
-    data: finalData,
+    data: cart,
   });
 });
 
 cartRouter.post("/", validateBody(productWithQuantity), async (req, res) => {
-  const [cart] = await db
+  let [cart] = await db
     .select()
     .from(carts)
-    .where(eq(cart.user_id, req.user.id));
+    .where(eq(carts.user_id, req.user.id))
+    .limit(1);
 
-  await db.insert(cartProduct).values({
-    productId: req.body.id,
-    quantity: req.body.quantity,
-    cartId: cart.id,
-  });
+  if (!cart) {
+    [cart] = await db
+      .insert(carts)
+      .values({ user_id: req.user.id })
+      .returning();
+  }
 
-  res.status(201).json({
-    message: "success",
-  });
-});
+  const [existing] = await db
+    .select()
+    .from(cartProduct)
+    .where(
+      and(
+        eq(cartProduct.cartId, cart.id),
+        eq(cartProduct.productId, req.body.id),
+      ),
+    )
+    .limit(1);
 
-cartRouter.put(
-  "/:product_id",
-  validateBody(z.object({ quantity: z.int().min(1) })),
-  async (req, res) => {
-    const product_id = req.params.product_id;
-    const quantity = req.body.quantity;
-    const [cart] = await db
-      .select()
-      .from(carts)
-      .where(eq(cart.user_id, req.user.id));
-
+  if (existing) {
     await db
       .update(cartProduct)
-      .set({ quantity: quantity })
+      .set({ quantity: sql`${cartProduct.quantity} + ${req.body.quantity}` })
       .where(
         and(
           eq(cartProduct.cartId, cart.id),
-          eq(cartProduct.productId, product_id),
+          eq(cartProduct.productId, req.body.id),
         ),
       );
+  } else {
+    await db.insert(cartProduct).values({
+      cartId: cart.id,
+      productId: req.body.id,
+      quantity: req.body.quantity,
+    });
+  }
 
-    res.status(200).json({
-      message: "success",
+  return res.status(201).json({
+    message: "product added to cart",
+    data: await getUserCart(req.user.id),
+  });
+});
+
+cartRouter.patch(
+  "/:productId",
+  validateBody(z.object({ quantity: z.int().min(1) })),
+  async (req, res) => {
+    const [cart] = await db
+      .select()
+      .from(carts)
+      .where(eq(carts.user_id, req.user.id))
+      .limit(1);
+
+    if (!cart) {
+      return res.status(404).json({
+        error: "cart not found",
+      });
+    }
+
+    const data = await db
+      .update(cartProduct)
+      .set({ quantity: req.body.quantity })
+      .where(
+        and(
+          eq(cartProduct.cartId, cart.id),
+          eq(cartProduct.productId, req.params.productId),
+        ),
+      )
+      .returning();
+
+    if (data.length === 0) {
+      return res.status(404).json({
+        error: "product not found in cart",
+      });
+    }
+
+    return res.status(200).json({
+      message: "cart updated",
+      data: await getUserCart(req.user.id),
     });
   },
 );
 
-cartRouter.delete("/:product_id", async (req, res) => {
-  const product_id = req.params.product_id;
+cartRouter.delete("/:productId", async (req, res) => {
   const [cart] = await db
     .select()
     .from(carts)
-    .where(eq(cart.user_id, req.user.id));
+    .where(eq(carts.user_id, req.user.id))
+    .limit(1);
 
-  await db
+  if (!cart) {
+    return res.status(404).json({
+      error: "cart not found",
+    });
+  }
+
+  const data = await db
     .delete(cartProduct)
     .where(
       and(
         eq(cartProduct.cartId, cart.id),
-        eq(cartProduct.productId, product_id),
+        eq(cartProduct.productId, req.params.productId),
       ),
-    );
+    )
+    .returning();
 
-  return res.status(204).end();
+  if (data.length === 0) {
+    return res.status(404).json({
+      error: "product not found in cart",
+    });
+  }
+
+  return res.status(200).json({
+    message: "product removed from cart",
+  });
 });

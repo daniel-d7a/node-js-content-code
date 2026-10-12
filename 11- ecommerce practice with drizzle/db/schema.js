@@ -12,6 +12,12 @@ import {
 } from "drizzle-orm/pg-core";
 
 const roleEnum = pgEnum("role", ["merchant", "customer"]);
+const orderStatusEnum = pgEnum("order_status", [
+  "pending",
+  "shipped",
+  "delivered",
+  "cancelled",
+]);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -41,6 +47,7 @@ export const orders = pgTable("orders", {
   user_id: integer("user_id")
     .notNull()
     .references(() => users.id),
+  status: orderStatusEnum().default("pending"),
   created_at: timestamp("created_at").defaultNow(),
 });
 
@@ -50,7 +57,7 @@ export const cartProduct = pgTable(
     cartId: integer("cart_id")
       .notNull()
       .references(() => carts.id),
-    productId: integer("prodcut_id")
+    productId: integer("product_id")
       .notNull()
       .references(() => products.id),
     quantity: integer("quantity").default(1),
@@ -61,7 +68,7 @@ export const cartProduct = pgTable(
 export const orderProduct = pgTable(
   "order_product",
   {
-    productId: integer("prodcut_id")
+    productId: integer("product_id")
       .notNull()
       .references(() => products.id),
     orderId: integer("order_id")
@@ -90,7 +97,7 @@ export const relations = defineRelations(
     users: {
       cart: r.one.carts({
         from: r.users.id,
-        to: r.carts.id,
+        to: r.carts.user_id,
       }),
       orders: r.many.orders({
         from: r.users.id,

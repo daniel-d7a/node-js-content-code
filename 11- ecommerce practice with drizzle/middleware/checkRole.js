@@ -15,7 +15,7 @@ export function checkRole(...roles) {
     } else {
       /// else error
       return res.status(403).json({
-        error: "insuffecient roles"
+        error: "forbidden"
       })
     }
     

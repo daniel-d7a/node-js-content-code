@@ -1,3 +1,5 @@
+CREATE TYPE "role" AS ENUM('merchant', 'customer');
+--> statement-breakpoint
 CREATE TABLE "cart_product" (
 	"cart_id" integer,
 	"prodcut_id" integer,

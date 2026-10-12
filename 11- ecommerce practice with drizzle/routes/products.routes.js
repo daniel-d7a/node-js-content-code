@@ -1,6 +1,8 @@
+import { ilike, or, eq } from "drizzle-orm";
 import express from "express";
 import { db } from "../db/index.js";
-import { products } from "../db/schema";
+import { products } from "../db/schema.js";
+import { checkAuth } from "../middleware/checkAuth.js";
 import { checkRole } from "../middleware/checkRole.js";
 import { validateBody } from "../middleware/validateBody.js";
 import {
@@ -11,7 +13,9 @@ import {
 export const productsRouter = express.Router();
 
 productsRouter.get("/", async (req, res) => {
-  const data = await db
+  const search = req.query.search;
+
+  const query = db
     .select({
       id: products.id,
       name: products.name,
@@ -21,13 +25,21 @@ productsRouter.get("/", async (req, res) => {
     })
     .from(products);
 
+  if (search) {
+    const pattern = `%${search}%`;
+    query.where(
+      or(ilike(products.name, pattern), ilike(products.description, pattern)),
+    );
+  }
+
+  const data = await query;
+
   return res.status(200).json({
     data: data,
   });
 });
 
 productsRouter.get("/:id", async (req, res) => {
-  const id = req.params.id;
   const [data] = await db
     .select({
       id: products.id,
@@ -37,8 +49,14 @@ productsRouter.get("/:id", async (req, res) => {
       price: products.price,
     })
     .from(products)
-    .where(eq(products.id, id))
+    .where(eq(products.id, req.params.id))
     .limit(1);
+
+  if (!data) {
+    return res.status(404).json({
+      error: "product not found",
+    });
+  }
 
   return res.status(200).json({
     data: data,
@@ -47,19 +65,22 @@ productsRouter.get("/:id", async (req, res) => {
 
 productsRouter.post(
   "/",
+  checkAuth,
   checkRole("merchant"),
   validateBody(insertProductSchema),
   async (req, res) => {
     const [data] = await db.insert(products).values(req.body).returning();
 
     return res.status(201).json({
+      message: "product created successfully",
       data: data,
     });
   },
 );
 
-productsRouter.put(
+productsRouter.patch(
   "/:id",
+  checkAuth,
   checkRole("merchant"),
   validateBody(updateProductSchema),
   async (req, res) => {
@@ -69,16 +90,35 @@ productsRouter.put(
       .where(eq(products.id, req.params.id))
       .returning();
 
+    if (!data) {
+      return res.status(404).json({
+        error: "product not found",
+      });
+    }
+
     return res.status(200).json({
+      message: "product updated successfully",
       data: data,
     });
   },
 );
 
-productsRouter.delete("/:id", checkRole("merchant"), async (req, res) => {
-  await db.delete(products).where(eq(products.id, req.params.id));
+productsRouter.delete(
+  "/:id",
+  checkAuth,
+  checkRole("merchant"),
+  async (req, res) => {
+    const data = await db
+      .delete(products)
+      .where(eq(products.id, req.params.id))
+      .returning();
 
-  return res.status(204).json({
-    message: "success",
-  });
-});
+    if (data.length === 0) {
+      return res.status(404).json({
+        error: "product not found",
+      });
+    }
+
+    return res.status(204).end();
+  },
+);
